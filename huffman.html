@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Huffman Coding: Send, Encode, Decode</title>
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#14212b;--mute:#5d6b76;--line:#b9c4cc;--hl:#c77d0a;--b0:#1f5fa8;--b1:#b3402e;--ok:#0f6e6e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10181e;--card:#18232b;--ink:#e6edf2;--mute:#93a3ae;--line:#3a4a55;--hl:#f0a93a;--b0:#6aa8ee;--b1:#f08a76;--ok:#4cc2c2}}
+:root[data-theme="dark"]{--bg:#10181e;--card:#18232b;--ink:#e6edf2;--mute:#93a3ae;--line:#3a4a55;--hl:#f0a93a;--b0:#6aa8ee;--b1:#f08a76;--ok:#4cc2c2}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Iowan Old Style",Georgia,serif}
+main{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.7rem;margin:.2em 0 .1em}
+h2{font-size:1.15rem;margin:0 0 .5em}
+p{margin:.3em 0}
+.sub{color:var(--mute)}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:16px 0}
+.mono,.bits,.chip,textarea,td.c{font-family:ui-monospace,Menlo,Consolas,monospace}
+textarea{width:100%;font-size:1rem;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical}
+button{font:inherit;font-size:.95rem;padding:8px 14px;border-radius:8px;border:1px solid var(--ok);background:var(--ok);color:#fff;cursor:pointer;margin:8px 8px 0 0}
+button.alt{background:transparent;color:var(--ok)}
+button:focus-visible,textarea:focus-visible{outline:3px solid var(--hl);outline-offset:2px}
+.scroll{overflow-x:auto}
+svg text{fill:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace}
+.edge{stroke:var(--line);stroke-width:2;fill:none}
+.edge.on{stroke:var(--hl);stroke-width:4}
+.nd{fill:var(--card);stroke:var(--line);stroke-width:2}
+.nd.leaf{stroke:var(--ok)}
+.nd.on{stroke:var(--hl);stroke-width:4;fill:var(--bg)}
+.lbl0{fill:var(--b0)!important;font-weight:700}.lbl1{fill:var(--b1)!important;font-weight:700}
+table{border-collapse:collapse;width:100%}
+th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+.b0{color:var(--b0);font-weight:700}.b1{color:var(--b1);font-weight:700}
+.stream{display:flex;flex-wrap:wrap;gap:6px;min-height:36px;margin-top:8px}
+.chip{border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:.95rem}
+.chip small{color:var(--mute)}
+.bits{word-break:break-all;font-size:1.05rem;letter-spacing:.06em}
+.bits span.cur{background:var(--hl);color:#000;border-radius:3px}
+.bits span.done{opacity:.45}
+.out{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.3rem;min-height:2em;color:var(--ok);white-space:pre-wrap}
+.warn{border-left:4px solid var(--hl);padding:6px 12px;background:var(--bg);border-radius:0 8px 8px 0}
+.stat{color:var(--mute);font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Huffman coding, step by step</h1>
+<p class="sub">Type a message. It becomes a short string of bits. Only someone who has the code tree can turn it back into text.</p>
+
+<section aria-labelledby="s1">
+<h2 id="s1">1. Sender writes a message</h2>
+<textarea id="msg" rows="2" maxlength="40" aria-label="Message to send">MEET ME AT NOON</textarea>
+<p class="stat">Up to 40 characters, so the tree stays readable.</p>
+</section>
+
+<section aria-labelledby="s2">
+<h2 id="s2">2. The tree is built from letter counts</h2>
+<p class="sub">Frequent letters sit near the top and get short codes. Going left adds a <span class="b0">0</span>, going right adds a <span class="b1">1</span>.</p>
+<div class="scroll"><svg id="tree" role="img" aria-label="Huffman tree"></svg></div>
+<table id="tbl" style="margin-top:10px"></table>
+</section>
+
+<section aria-labelledby="s3">
+<h2 id="s3">3. Encoding: each character follows its path</h2>
+<button id="enc">Play encoding</button>
+<div class="stream" id="stream" aria-live="polite"></div>
+<p class="stat" id="stats"></p>
+</section>
+
+<section aria-labelledby="s4">
+<h2 id="s4">4. What travels over the wire</h2>
+<div class="bits" id="wire"></div>
+<p class="sub" style="margin-top:10px">An eavesdropper without the tree might try reading the same bits as normal 8-bit text:</p>
+<div class="bits" id="spy"></div>
+</section>
+
+<section aria-labelledby="s5">
+<h2 id="s5">5. Receiver decodes with the tree</h2>
+<p class="sub">Start at the top. Read one bit at a time: 0 goes left, 1 goes right. When you land on a letter, write it down and go back to the top.</p>
+<button id="dec">Play decoding</button><button id="stop" class="alt">Stop</button>
+<div class="bits" id="rbits" style="margin-top:10px"></div>
+<div class="out" id="out" aria-live="polite"></div>
+</section>
+
+<section class="warn">
+<strong>Be honest about security.</strong> Huffman coding is compression, not encryption. The tree is the only "key", and it is built from the message itself, so you must share it with the receiver. Anyone who gets both the bits and the tree can read the message. For real secrecy, encrypt the message (for example with AES) and then compress, or use both together.
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const NS="http://www.w3.org/2000/svg";
+let root,codes,text,bits,timer,nid;
+const show=c=>c===" "?"␣":c;
+
+function build(t){
+  const fr={};for(const c of t)fr[c]=(fr[c]||0)+1;
+  nid=0;
+  let nodes=Object.keys(fr).sort().map(c=>({id:nid++,ch:c,f:fr[c]}));
+  if(nodes.length===1){root={id:nid++,f:nodes[0].f,l:nodes[0]};}
+  else{
+    while(nodes.length>1){
+      nodes.sort((a,b)=>a.f-b.f||a.id-b.id);
+      const a=nodes.shift(),b=nodes.shift();
+      nodes.push({id:nid++,f:a.f+b.f,l:a,r:b});
+    }
+    root=nodes[0];
+  }
+  codes={};
+  (function w(n,p){
+    if(n.ch!==undefined){codes[n.ch]=p||"0";return}
+    w(n.l,p+"0");if(n.r)w(n.r,p+"1");
+  })(root,"");
+  return fr;
+}
+
+function el(tag,attrs,parent){
+  const e=document.createElementNS(NS,tag);
+  for(const k in attrs)e.setAttribute(k,attrs[k]);
+  parent.appendChild(e);return e;
+}
+
+function drawTree(){
+  const svg=$("tree");svg.innerHTML="";
+  let leaf=0,maxd=0;
+  (function w(n,d){
+    n.d=d;maxd=Math.max(maxd,d);
+    if(n.ch!==undefined){n.x=leaf++;return}
+    w(n.l,d+1);
+    if(n.r){w(n.r,d+1);n.x=(n.l.x+n.r.x)/2}else n.x=n.l.x;
+  })(root,0);
+  const X=n=>n.x*56+36,Y=n=>n.d*72+30;
+  const W=Math.max(leaf*56+16,280),H=(maxd+1)*72+20;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  svg.setAttribute("width",W);svg.setAttribute("height",H);
+  const edges=el("g",{},svg),nodes=el("g",{},svg);
+  (function w(n){
+    [["l","0"],["r","1"]].forEach(([k,b])=>{
+      const c=n[k];if(!c)return;
+      el("line",{class:"edge",id:"e"+c.id,x1:X(n),y1:Y(n),x2:X(c),y2:Y(c)},edges);
+      const t=el("text",{class:"lbl"+b,x:(X(n)+X(c))/2+(b==="0"?-10:10),y:(Y(n)+Y(c))/2,"text-anchor":"middle","font-size":14},edges);
+      t.textContent=b;
+      w(c);
+    });
+  })(root);
+  (function w(n){
+    const isLeaf=n.ch!==undefined;
+    el("circle",{class:"nd"+(isLeaf?" leaf":""),id:"n"+n.id,cx:X(n),cy:Y(n),r:19},nodes);
+    const t=el("text",{x:X(n),y:Y(n)+5,"text-anchor":"middle","font-size":isLeaf?15:13},nodes);
+    t.textContent=isLeaf?show(n.ch):n.f;
+    if(isLeaf){
+      const f=el("text",{x:X(n),y:Y(n)+34,"text-anchor":"middle","font-size":11,opacity:.7},nodes);
+      f.textContent="×"+n.f;
+    }
+    if(n.l)w(n.l);if(n.r)w(n.r);
+  })(root);
+}
+
+function clearHi(){document.querySelectorAll("#tree .on").forEach(e=>e.classList.remove("on"))}
+function hi(ids){clearHi();ids.forEach(i=>{const a=$("n"+i),b=$("e"+i);if(a)a.classList.add("on");if(b)b.classList.add("on")})}
+function pathTo(code){
+  let n=root;const ids=[n.id];
+  for(const b of code){n=b==="0"?n.l:n.r;ids.push(n.id)}
+  return ids;
+}
+
+function table(fr){
+  const rows=Object.keys(fr).sort((a,b)=>codes[a].length-codes[b].length||a.localeCompare(b));
+  $("tbl").innerHTML="<tr><th>Char</th><th>Count</th><th>Code</th></tr>"+rows.map(c=>
+    `<tr><td class="c">${show(c)}</td><td>${fr[c]}</td><td class="c">${[...codes[c]].map(b=>`<span class="b${b}">${b}</span>`).join("")}</td></tr>`).join("");
+}
+
+function spy(){
+  let s="";
+  for(let i=0;i<bits.length;i+=8){
+    const v=parseInt(bits.slice(i,i+8).padEnd(8,"0"),2);
+    s+=(v>=33&&v<=126)?String.fromCharCode(v):"·";
+  }
+  $("spy").textContent=s;
+}
+
+function colorBits(s){return [...s].map(b=>`<span class="b${b}">${b}</span>`).join("")}
+
+function reset(){
+  clearTimeout(timer);clearHi();
+  text=$("msg").value;
+  if(!text){["tree","tbl","stream","wire","spy","rbits","out","stats"].forEach(i=>$(i).innerHTML="");return}
+  const fr=build(text);
+  drawTree();table(fr);
+  bits=[...text].map(c=>codes[c]).join("");
+  $("stream").innerHTML="";$("out").textContent="";
+  $("wire").innerHTML=colorBits(bits);
+  $("rbits").innerHTML=[...bits].map(b=>`<span>${b}</span>`).join("");
+  $("stats").textContent=`Plain text: ${text.length*8} bits (8 per character). Huffman: ${bits.length} bits. Saved ${Math.round(100-bits.length/(text.length*8)*100)}%.`;
+  spy();
+}
+
+function playEnc(){
+  reset();if(!text)return;
+  const chars=[...text];let i=0;
+  (function tick(){
+    if(i>=chars.length){clearHi();return}
+    const c=chars[i++];
+    hi(pathTo(codes[c]));
+    const d=document.createElement("div");d.className="chip";
+    d.innerHTML=`${show(c)} <small>→</small> ${colorBits(codes[c])}`;
+    $("stream").appendChild(d);
+    timer=setTimeout(tick,750);
+  })();
+}
+
+function playDec(){
+  clearTimeout(timer);clearHi();$("out").textContent="";
+  const spans=[...$("rbits").children];
+  spans.forEach(s=>s.className="");
+  let k=0,cur=root;
+  hi([root.id]);
+  (function tick(){
+    if(k>=bits.length){clearHi();return}
+    if(k>0)spans[k-1].className="done";
+    spans[k].className="cur";
+    cur=bits[k]==="0"?cur.l:cur.r;
+    hi([cur.id]);
+    k++;
+    if(cur.ch!==undefined){
+      $("out").textContent+=cur.ch;
+      timer=setTimeout(()=>{cur=root;hi([root.id]);tick()},550);
+    }else timer=setTimeout(tick,450);
+  })();
+}
+
+$("msg").addEventListener("input",reset);
+$("enc").addEventListener("click",playEnc);
+$("dec").addEventListener("click",playDec);
+$("stop").addEventListener("click",()=>{clearTimeout(timer);clearHi()});
+reset();
+</script>
+</body>
+</html>
